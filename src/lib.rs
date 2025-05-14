@@ -31,6 +31,9 @@ pub mod chain;
 /// Chat-based interactions with language models (e.g. ChatGPT style)
 pub mod chat;
 
+/// Chat-based interactions with language models (e.g. ChatGPT style) with streaming
+pub mod chat_stream;
+
 /// Text completion capabilities (e.g. GPT-3 style completion)
 pub mod completion;
 

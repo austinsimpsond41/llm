@@ -2,15 +2,20 @@
 //!
 //! This module provides integration with Ollama's local LLM server through its API.
 
+use std::time::Duration;
+
 use crate::{
     chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole, StructuredOutputFormat, Tool},
+    chat_stream::{ChatResponseDelta, StreamChatProvider},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
     error::LLMError,
     FunctionCall, ToolCall,
 };
 use async_trait::async_trait;
+use futures::{Stream, StreamExt};
 use reqwest::Client;
+use reqwest_streams::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -422,6 +427,133 @@ impl ChatProvider for Ollama {
         let json_resp = resp.json::<OllamaResponse>().await?;
 
         Ok(Box::new(json_resp))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaChatMessageDelta {
+    role: Option<String>,
+    content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaChatResponseDelta {
+    message: OllamaChatMessageDelta,
+}
+
+impl std::fmt::Display for OllamaChatResponseDelta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("yell at austin for not implementing this yet")?;
+        Ok(())
+    }
+}
+
+impl ChatResponseDelta for OllamaChatResponseDelta {
+    fn text(&self) -> Option<String> {
+        self.message.content.clone()
+    }
+
+    fn tool_call(&self) -> Option<crate::chat_stream::ToolCallDelta> {
+        None
+    }
+}
+
+#[async_trait]
+impl StreamChatProvider for Ollama {
+    async fn chat_stream_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: Option<&[Tool]>,
+    ) -> Result<impl Stream<Item = Box<impl ChatResponseDelta>>, LLMError> {
+        if self.base_url.is_empty() {
+            return Err(LLMError::InvalidRequest("Missing base_url".to_string()));
+        }
+
+        let mut chat_messages: Vec<OllamaChatMessage> = messages
+            .iter()
+            .map(|msg| OllamaChatMessage {
+                role: match msg.role {
+                    ChatRole::User => "user",
+                    ChatRole::Assistant => "assistant",
+                },
+                content: &msg.content,
+            })
+            .collect();
+
+        if let Some(system) = &self.system {
+            chat_messages.insert(
+                0,
+                OllamaChatMessage {
+                    role: "system",
+                    content: system,
+                },
+            );
+        }
+
+        // Convert tools to Ollama format if provided
+        let ollama_tools = tools.map(|t| t.iter().map(OllamaTool::from).collect());
+
+        // Ollama doesn't require the "name" field in the schema, so we just use the schema itself
+        let format = if let Some(schema) = &self.json_schema {
+            schema.schema.as_ref().map(|schema| OllamaResponseFormat {
+                format: OllamaResponseType::StructuredOutput(schema.clone()),
+            })
+        } else {
+            None
+        };
+
+        let req_body = OllamaChatRequest {
+            model: self.model.clone(),
+            messages: chat_messages,
+            stream: true,
+            options: Some(OllamaOptions {
+                top_p: self.top_p,
+                top_k: self.top_k,
+            }),
+            format,
+            tools: ollama_tools,
+        };
+
+        let url = format!("{}/api/chat", self.base_url);
+
+        let mut request = self
+            .client
+            .post(&url)
+            .json(&req_body)
+            .header("Content-Type", "application/json");
+
+        if let Some(timeout) = self.timeout_seconds {
+            request = request.timeout(std::time::Duration::from_secs(timeout));
+        }
+
+        let stream = request
+            .send()
+            .await
+            .map_err(|e| LLMError::HttpError(e.to_string()))?
+            .json_array_stream::<OllamaChatResponseDelta>(1024);
+
+        Ok(stream.map(|f| Box::new(f.unwrap())))
+        // Ok(stream.filter_map(|evt| {
+        //     Box::pin(async move {
+        //         if evt.is_err() {
+        //             let err = evt.as_ref().err().unwrap();
+        //             println!("encountered error in event stream: {}", err.to_string());
+        //         }
+        //         let evt = evt.ok()?;
+        //         match evt {
+        //             Event::Message(msg) => {
+        //                 println!("{}", msg.data);
+
+        //                 let response_delta =
+        //                     serde_json::from_str::<OllamaChatResponseDelta>(msg.data.as_str())
+        //                         .unwrap();
+
+        //                 Some(Box::new(response_delta))
+        //             }
+        //             _ => None,
+        //         }
+        //     })
+        // }))
     }
 }
 

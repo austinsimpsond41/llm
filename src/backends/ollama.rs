@@ -2,8 +2,6 @@
 //!
 //! This module provides integration with Ollama's local LLM server through its API.
 
-use std::time::Duration;
-
 use crate::{
     chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole, StructuredOutputFormat, Tool},
     chat_stream::{ChatResponseDelta, StreamChatProvider},

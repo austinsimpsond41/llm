@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use futures::StreamExt;
 // Import required modules from the LLM library
 use llm::chat_stream::ChatResponseDelta;
@@ -53,7 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .as_ref()
                         .map(|s| s.as_str())
                         .unwrap_or("nothing in here")
-                )
+                );
+                std::io::stdout().flush();
             }
         }
         Err(e) => eprintln!("Chat error: {}", e),

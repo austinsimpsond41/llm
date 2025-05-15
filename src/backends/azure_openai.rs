@@ -12,15 +12,15 @@ use crate::{
     LLMProvider,
 };
 use crate::{
-    chat::{ChatResponse, ToolChoice},
-    chat_stream::{ChatResponseDelta, StreamChatProvider},
+    chat::{self, ChatResponse, ToolChoice},
+    chat_stream::{ChatResponseDelta, StreamChatProvider, ToolCallDelta},
     FunctionCall, ToolCall,
 };
 use async_trait::async_trait;
 use either::*;
 use futures::{Stream, StreamExt};
 use reqwest::{Client, Url};
-use reqwest_eventsource::RequestBuilderExt;
+use reqwest_eventsource::{retry::Never, Event, RequestBuilderExt};
 use serde::{Deserialize, Serialize};
 
 /// Client for interacting with Azure OpenAI's API.
@@ -514,7 +514,19 @@ impl ChatProvider for AzureOpenAI {
 }
 
 #[derive(Deserialize, Debug)]
-struct AzureOpenAIChatResponseDelta {}
+struct AzureOpenAIChatMessageDelta {
+    content: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct AzureOpenAIChatChoiceDelta {
+    delta: AzureOpenAIChatMessageDelta,
+}
+
+#[derive(Deserialize, Debug)]
+struct AzureOpenAIChatResponseDelta {
+    choices: Vec<AzureOpenAIChatChoiceDelta>,
+}
 
 impl std::fmt::Display for AzureOpenAIChatResponseDelta {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -524,10 +536,10 @@ impl std::fmt::Display for AzureOpenAIChatResponseDelta {
 
 impl ChatResponseDelta for AzureOpenAIChatResponseDelta {
     fn text(&self) -> Option<String> {
-        None
+        self.choices.iter().next()?.delta.content.clone()
     }
 
-    fn tool_call(&self) -> Option<crate::chat_stream::ToolCallDelta> {
+    fn tool_call(&self) -> Option<ToolCallDelta> {
         None
     }
 }
@@ -619,11 +631,36 @@ impl StreamChatProvider for AzureOpenAI {
             request = request.timeout(std::time::Duration::from_secs(timeout));
         }
 
-        let stream = request
+        let mut stream = request
             .eventsource()
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        Ok(stream.map(|_e| Box::new(AzureOpenAIChatResponseDelta {})))
+        stream.set_retry_policy(Box::new(Never {}));
+
+        Ok(stream.filter_map(|evt| {
+            Box::pin(async move {
+                if !evt.is_ok() {
+                    eprintln!("{}", evt.err().unwrap());
+                    return None;
+                }
+                let evt = evt.ok().unwrap();
+
+                match evt {
+                    Event::Open => None,
+                    Event::Message(msg) => {
+                        match serde_json::from_str::<AzureOpenAIChatResponseDelta>(
+                            msg.data.as_str(),
+                        ) {
+                            Ok(val) => Some(Box::new(val)),
+                            Err(e) => {
+                                eprintln!("failed to parse json: {}", e.to_string());
+                                None
+                            }
+                        }
+                    }
+                }
+            })
+        }))
     }
 }
 

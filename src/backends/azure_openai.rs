@@ -550,7 +550,7 @@ impl StreamChatProvider for AzureOpenAI {
         &self,
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
-    ) -> Result<impl Stream<Item = Box<impl ChatResponseDelta>>, LLMError> {
+    ) -> Result<impl Stream<Item = Result<Box<impl ChatResponseDelta>, LLMError>>, LLMError> {
         if self.api_key.is_empty() {
             return Err(LLMError::AuthError(
                 "Missing Azure OpenAI API key".to_string(),
@@ -651,11 +651,8 @@ impl StreamChatProvider for AzureOpenAI {
                         match serde_json::from_str::<AzureOpenAIChatResponseDelta>(
                             msg.data.as_str(),
                         ) {
-                            Ok(val) => Some(Box::new(val)),
-                            Err(e) => {
-                                eprintln!("failed to parse json: {}", e.to_string());
-                                None
-                            }
+                            Ok(val) => Some(Ok(Box::new(val))),
+                            Err(e) => Some(Err(LLMError::StreamError(e.to_string()))),
                         }
                     }
                 }

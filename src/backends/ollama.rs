@@ -462,7 +462,7 @@ impl StreamChatProvider for Ollama {
         &self,
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
-    ) -> Result<impl Stream<Item = Box<impl ChatResponseDelta>>, LLMError> {
+    ) -> Result<impl Stream<Item = Result<Box<impl ChatResponseDelta>, LLMError>>, LLMError> {
         if self.base_url.is_empty() {
             return Err(LLMError::InvalidRequest("Missing base_url".to_string()));
         }
@@ -530,28 +530,10 @@ impl StreamChatProvider for Ollama {
             .map_err(|e| LLMError::HttpError(e.to_string()))?
             .json_array_stream::<OllamaChatResponseDelta>(1024);
 
-        Ok(stream.map(|f| Box::new(f.unwrap())))
-        // Ok(stream.filter_map(|evt| {
-        //     Box::pin(async move {
-        //         if evt.is_err() {
-        //             let err = evt.as_ref().err().unwrap();
-        //             println!("encountered error in event stream: {}", err.to_string());
-        //         }
-        //         let evt = evt.ok()?;
-        //         match evt {
-        //             Event::Message(msg) => {
-        //                 println!("{}", msg.data);
-
-        //                 let response_delta =
-        //                     serde_json::from_str::<OllamaChatResponseDelta>(msg.data.as_str())
-        //                         .unwrap();
-
-        //                 Some(Box::new(response_delta))
-        //             }
-        //             _ => None,
-        //         }
-        //     })
-        // }))
+        Ok(stream.map(|f| {
+            f.map(|r| Box::new(r))
+                .map_err(|e| LLMError::StreamError(e.to_string()))
+        }))
     }
 }
 

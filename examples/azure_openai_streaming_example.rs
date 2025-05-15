@@ -74,13 +74,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             while let Some(delta) = stream.next().await {
                 print!(
                     "{}",
-                    delta
+                    delta?
                         .text()
                         .as_ref()
                         .map(|s| s.as_str())
                         .unwrap_or("nothing in here")
                 );
-                std::io::stdout().flush();
+                std::io::stdout().flush()?;
             }
         }
         Err(e) => eprintln!("Chat error: {}", e),

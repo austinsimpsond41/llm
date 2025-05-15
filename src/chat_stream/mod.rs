@@ -26,7 +26,7 @@ pub trait StreamChatProvider {
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<impl Stream<Item = Box<impl ChatResponseDelta>>, LLMError> {
+    ) -> Result<impl Stream<Item = Result<Box<impl ChatResponseDelta>, LLMError>>, LLMError> {
         self.chat_stream_with_tools(messages, None).await
     }
 
@@ -34,5 +34,5 @@ pub trait StreamChatProvider {
         &self,
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
-    ) -> Result<impl Stream<Item = Box<impl ChatResponseDelta>>, LLMError>;
+    ) -> Result<impl Stream<Item = Result<Box<impl ChatResponseDelta>, LLMError>>, LLMError>;
 }

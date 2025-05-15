@@ -158,7 +158,7 @@ struct ImageUrlContent<'a> {
 }
 
 #[derive(Serialize)]
-struct OpenAIEmbeddingRequest {
+struct AzureOpenAIEmbeddingRequest {
     model: String,
     input: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -188,7 +188,7 @@ struct AzureOpenAIChatRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_format: Option<OpenAIResponseFormat>,
+    response_format: Option<AzureOpenAIResponseFormat>,
 }
 
 /// Response from OpenAI's chat API endpoint.
@@ -217,7 +217,7 @@ struct AzureOpenAIEmbeddingData {
     embedding: Vec<f32>,
 }
 #[derive(Deserialize, Debug)]
-struct OpenAIEmbeddingResponse {
+struct AzureOpenAIEmbeddingResponse {
     data: Vec<AzureOpenAIEmbeddingData>,
 }
 
@@ -225,7 +225,7 @@ struct OpenAIEmbeddingResponse {
 ///Setting to `{ "type": "json_schema", "json_schema": {...} }` enables Structured Outputs which ensures the model will match your supplied JSON schema. Learn more in the [Structured Outputs guide](https://platform.openai.com/docs/guides/structured-outputs).
 /// Setting to `{ "type": "json_object" }` enables the older JSON mode, which ensures the message the model generates is valid JSON. Using `json_schema` is preferred for models that support it.
 #[derive(Deserialize, Debug, Serialize)]
-enum OpenAIResponseType {
+enum AzureOpenAIResponseType {
     #[serde(rename = "text")]
     Text,
     #[serde(rename = "json_schema")]
@@ -235,21 +235,21 @@ enum OpenAIResponseType {
 }
 
 #[derive(Deserialize, Debug, Serialize)]
-struct OpenAIResponseFormat {
+struct AzureOpenAIResponseFormat {
     #[serde(rename = "type")]
-    response_type: OpenAIResponseType,
+    response_type: AzureOpenAIResponseType,
     #[serde(skip_serializing_if = "Option::is_none")]
     json_schema: Option<StructuredOutputFormat>,
 }
 
-impl From<StructuredOutputFormat> for OpenAIResponseFormat {
+impl From<StructuredOutputFormat> for AzureOpenAIResponseFormat {
     /// Modify the schema to ensure that it meets OpenAI's requirements.
     fn from(structured_response_format: StructuredOutputFormat) -> Self {
         // It's possible to pass a StructuredOutputJsonSchema without an actual schema.
         // In this case, just pass the StructuredOutputJsonSchema object without modifying it.
         match structured_response_format.schema {
-            None => OpenAIResponseFormat {
-                response_type: OpenAIResponseType::JsonSchema,
+            None => AzureOpenAIResponseFormat {
+                response_type: AzureOpenAIResponseType::JsonSchema,
                 json_schema: Some(structured_response_format),
             },
             Some(mut schema) => {
@@ -262,8 +262,8 @@ impl From<StructuredOutputFormat> for OpenAIResponseFormat {
                     schema
                 };
 
-                OpenAIResponseFormat {
-                    response_type: OpenAIResponseType::JsonSchema,
+                AzureOpenAIResponseFormat {
+                    response_type: AzureOpenAIResponseType::JsonSchema,
                     json_schema: Some(StructuredOutputFormat {
                         name: structured_response_format.name,
                         description: structured_response_format.description,
@@ -446,7 +446,7 @@ impl ChatProvider for AzureOpenAI {
         }
 
         // Build the response format object
-        let response_format: Option<OpenAIResponseFormat> =
+        let response_format: Option<AzureOpenAIResponseFormat> =
             self.json_schema.clone().map(|s| s.into());
 
         let body = AzureOpenAIChatRequest {
@@ -596,7 +596,7 @@ impl StreamChatProvider for AzureOpenAI {
         }
 
         // Build the response format object
-        let response_format: Option<OpenAIResponseFormat> =
+        let response_format: Option<AzureOpenAIResponseFormat> =
             self.json_schema.clone().map(|s| s.into());
 
         let body = AzureOpenAIChatRequest {
@@ -689,7 +689,7 @@ impl EmbeddingProvider for AzureOpenAI {
             .clone()
             .unwrap_or_else(|| "float".to_string());
 
-        let body = OpenAIEmbeddingRequest {
+        let body = AzureOpenAIEmbeddingRequest {
             model: self.model.clone(),
             input,
             encoding_format: Some(emb_format),
@@ -713,7 +713,7 @@ impl EmbeddingProvider for AzureOpenAI {
             .await?
             .error_for_status()?;
 
-        let json_resp: OpenAIEmbeddingResponse = resp.json().await?;
+        let json_resp: AzureOpenAIEmbeddingResponse = resp.json().await?;
 
         let embeddings = json_resp.data.into_iter().map(|d| d.embedding).collect();
         Ok(embeddings)

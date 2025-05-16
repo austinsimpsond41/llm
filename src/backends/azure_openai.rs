@@ -13,7 +13,7 @@ use crate::{
 };
 use crate::{
     chat::{self, ChatResponse, ToolChoice},
-    chat_stream::{ChatResponseDelta, StreamChatProvider, ToolCallDelta},
+    chat_stream::{ChatResponseDelta, FunctionCallDelta, StreamChatProvider, ToolCallDelta},
     FunctionCall, ToolCall,
 };
 use async_trait::async_trait;
@@ -516,6 +516,33 @@ impl ChatProvider for AzureOpenAI {
 #[derive(Deserialize, Debug)]
 struct AzureOpenAIChatMessageDelta {
     content: Option<String>,
+    tool_calls: Option<Vec<AzureOpenAIToolCallDelta>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct AzureOpenAIToolCallDelta {
+    function: AzureOpenAIFunctionCallDelta,
+    id: Option<String>,
+    index: usize,
+}
+
+impl Into<ToolCallDelta> for &AzureOpenAIToolCallDelta {
+    fn into(self) -> ToolCallDelta {
+        ToolCallDelta {
+            index: Some(self.index),
+            id: self.id.to_owned(),
+            function: FunctionCallDelta {
+                name: self.function.name.to_owned(),
+                arguments: self.function.arguments.to_owned(),
+            },
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+struct AzureOpenAIFunctionCallDelta {
+    name: Option<String>,
+    arguments: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -540,7 +567,12 @@ impl ChatResponseDelta for AzureOpenAIChatResponseDelta {
     }
 
     fn tool_calls(&self) -> Option<Vec<ToolCallDelta>> {
-        None
+        self.choices.first().and_then(|c| {
+            c.delta
+                .tool_calls
+                .as_ref()
+                .map(|tcs| tcs.iter().map(|tc| tc.into()).collect())
+        })
     }
 }
 

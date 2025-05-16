@@ -539,7 +539,7 @@ impl ChatResponseDelta for AzureOpenAIChatResponseDelta {
         self.choices.iter().next()?.delta.content.clone()
     }
 
-    fn tool_call(&self) -> Option<ToolCallDelta> {
+    fn tool_calls(&self) -> Option<Vec<ToolCallDelta>> {
         None
     }
 }

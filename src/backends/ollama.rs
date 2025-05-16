@@ -4,7 +4,7 @@
 
 use crate::{
     chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole, StructuredOutputFormat, Tool},
-    chat_stream::{ChatResponseDelta, StreamChatProvider},
+    chat_stream::{ChatResponseDelta, FunctionCallDelta, StreamChatProvider, ToolCallDelta},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
     error::LLMError,
@@ -432,6 +432,31 @@ impl ChatProvider for Ollama {
 struct OllamaChatMessageDelta {
     role: Option<String>,
     content: Option<String>,
+    tool_calls: Option<Vec<OllamaToolCallDelta>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaToolCallDelta {
+    function: OllamaFunctionCallDelta,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaFunctionCallDelta {
+    name: Option<String>,
+    arguments: Option<Value>,
+}
+
+impl Into<ToolCallDelta> for &OllamaToolCallDelta {
+    fn into(self) -> ToolCallDelta {
+        ToolCallDelta {
+            index: None,
+            id: None,
+            function: FunctionCallDelta {
+                name: self.function.name.to_owned(),
+                arguments: serde_json::to_string(&self.function.arguments).ok(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -451,8 +476,11 @@ impl ChatResponseDelta for OllamaChatResponseDelta {
         self.message.content.clone()
     }
 
-    fn tool_call(&self) -> Option<crate::chat_stream::ToolCallDelta> {
-        None
+    fn tool_calls(&self) -> Option<Vec<ToolCallDelta>> {
+        self.message
+            .tool_calls
+            .as_ref()
+            .map(|tcs| tcs.iter().map(|tc| tc.into()).collect())
     }
 }
 

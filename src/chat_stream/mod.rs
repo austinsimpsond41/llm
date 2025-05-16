@@ -7,18 +7,19 @@ use crate::{
 };
 
 pub struct ToolCallDelta {
-    pub index: usize,
+    pub index: Option<usize>,
     pub id: Option<String>,
+    pub function: FunctionCallDelta,
 }
 
 pub struct FunctionCallDelta {
     pub arguments: Option<String>,
-    pub name: String,
+    pub name: Option<String>,
 }
 
 pub trait ChatResponseDelta: std::fmt::Debug + std::fmt::Display {
     fn text(&self) -> Option<String>;
-    fn tool_call(&self) -> Option<ToolCallDelta>;
+    fn tool_calls(&self) -> Option<Vec<ToolCallDelta>>;
 }
 
 #[async_trait]
